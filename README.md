@@ -1,13 +1,17 @@
 # middagtec/php-base
 
-Shared PHP 8.4-FPM base image with common extensions for WordPress and Moodle projects.
+Shared PHP-FPM base image with common extensions for WordPress and Moodle projects.
 
 ## Tags
 
-| Tag | Description |
-|-----|-------------|
-| `8.4-fpm`, `latest` | Production: PHP 8.4-FPM with all extensions, OPcache JIT enabled |
-| `8.4-fpm-dev` | Development: production + Xdebug, OPcache timestamp validation |
+Builds for PHP 8.2, 8.3, 8.4, and 8.5.
+
+| Tag                                           | Description                                  |
+|-----------------------------------------------|----------------------------------------------|
+| `8.4-fpm`, `latest`                           | Production: PHP 8.4-FPM, OPcache JIT enabled |
+| `8.4-fpm-dev`                                 | Development: production + Xdebug             |
+| `8.2-fpm` / `8.3-fpm` / `8.5-fpm`             | Production for other PHP versions            |
+| `8.2-fpm-dev` / `8.3-fpm-dev` / `8.5-fpm-dev` | Development for other PHP versions           |
 
 ## Extensions
 
@@ -20,7 +24,7 @@ mbstring, mysqli, opcache, pdo_mysql, pdo_pgsql, pgsql, soap, sodium, xml, zip
 
 redis, decimal
 
-### Dev only (8.4-fpm-dev)
+### Dev only (*-dev tags)
 
 xdebug
 
@@ -32,7 +36,7 @@ FROM middagtec/php-base:8.4-fpm AS production
 COPY --from=builder /build/ /var/www/html/
 COPY docker/wordpress/php.ini /usr/local/etc/php/conf.d/app.ini
 
-# Moodle project
+# Moodle project (PostgreSQL)
 FROM middagtec/php-base:8.4-fpm AS production
 COPY --from=builder /build/ /var/www/html/
 COPY docker/moodle/php.ini /usr/local/etc/php/conf.d/app.ini
@@ -56,9 +60,9 @@ The image ships sensible OPcache defaults in `opcache-defaults.ini`:
 
 Override by mounting or copying your own `.ini` file with higher priority (e.g., `zz-app.ini`).
 
-The dev tag sets `validate_timestamps = 1` automatically.
+The dev tags set `validate_timestamps = 1` automatically.
 
-## Xdebug defaults (dev tag)
+## Xdebug defaults (dev tags)
 
 - Mode: `debug`
 - Start with request: `trigger`
@@ -75,21 +79,30 @@ Override with your own `xdebug.ini`.
 
 ## CI/CD
 
-GitHub Actions workflow builds and pushes both tags on every push to `main` that changes `Dockerfile`, `config/`, or the workflow file.
+GitHub Actions matrix builds all 4 PHP versions (8.2-8.5) in parallel and pushes
+both production and dev tags on every push to `main`.
+
+The `latest` tag always points to `8.4-fpm`.
 
 ### Docker Hub secrets required
 
-| Secret | Description |
-|--------|-------------|
-| `DOCKERHUB_USERNAME` | Docker Hub username (`middagtec`) |
-| `DOCKERHUB_TOKEN` | Docker Hub access token |
+| Type     | Name                 | Description                       |
+|----------|----------------------|-----------------------------------|
+| Variable | `DOCKERHUB_USERNAME` | Docker Hub username (`middagtec`) |
+| Secret   | `DOCKERHUB_TOKEN`    | Docker Hub access token           |
 
 ## Building locally
 
 ```bash
-# Production
-docker build --target production -t middagtec/php-base:8.4-fpm .
+# Production (specific version)
+docker build --build-arg PHP_VERSION=8.4 --target production -t middagtec/php-base:8.4-fpm .
 
 # Development
-docker build --target development -t middagtec/php-base:8.4-fpm-dev .
+docker build --build-arg PHP_VERSION=8.4 --target development -t middagtec/php-base:8.4-fpm-dev .
+
+# All versions
+for v in 8.2 8.3 8.4 8.5; do
+  docker build --build-arg PHP_VERSION=$v --target production -t middagtec/php-base:$v-fpm .
+  docker build --build-arg PHP_VERSION=$v --target development -t middagtec/php-base:$v-fpm-dev .
+done
 ```
