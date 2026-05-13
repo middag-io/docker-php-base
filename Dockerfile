@@ -29,16 +29,12 @@ LABEL org.opencontainers.image.description="PHP ${PHP_VERSION}-FPM base image wi
 
 # System dependencies for PHP extensions + tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        # PHP extension build deps
-        libcurl4-openssl-dev \
+        # PHP extension build deps (only for extensions not in base image)
         libfreetype6-dev \
         libicu-dev \
         libjpeg62-turbo-dev \
-        libmpc-dev \
         libonig-dev \
         libpng-dev \
-        libsodium-dev \
-        libxml2-dev \
         libzip-dev \
         libwebp-dev \
         libavif-dev \
@@ -59,16 +55,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         --with-webp \
         --with-avif \
     && docker-php-ext-configure ldap \
+    # Extensions already in php:X.Y-fpm base: curl, dom, mbstring, sodium, xml
+    # Only install what's NOT pre-compiled
     && docker-php-ext-install -j"$(nproc)" \
         bcmath \
-        curl \
-        dom \
         exif \
         gd \
         gmp \
         intl \
         ldap \
-        mbstring \
         mysqli \
         opcache \
         pcntl \
@@ -76,8 +71,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         pdo_pgsql \
         pgsql \
         soap \
-        sodium \
-        xml \
         zip \
     # PECL extensions
     && pecl install redis decimal imagick apcu xdebug \
