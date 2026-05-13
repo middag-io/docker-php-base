@@ -10,23 +10,36 @@ Builds for PHP 8.2, 8.3, 8.4, and 8.5.
 |-----------------------------------------------|----------------------------------------------|
 | `8.4-fpm`, `latest`                           | Production: PHP 8.4-FPM, OPcache JIT enabled |
 | `8.4-fpm-dev`                                 | Development: production + Xdebug             |
-| `8.2-fpm` / `8.3-fpm` / `8.5-fpm`             | Production for other PHP versions            |
-| `8.2-fpm-dev` / `8.3-fpm-dev` / `8.5-fpm-dev` | Development for other PHP versions           |
+| `8.2-fpm` / `8.3-fpm` / `8.5-fpm`            | Production for other PHP versions            |
+| `8.2-fpm-dev` / `8.3-fpm-dev` / `8.5-fpm-dev`| Development for other PHP versions           |
 
 ## Extensions
 
-### Core (built-in)
+### Core (docker-php-ext-install)
 
 bcmath, curl, dom, exif, gd (freetype + jpeg + webp + avif), gmp, intl, ldap,
-mbstring, mysqli, opcache, pdo_mysql, pdo_pgsql, pgsql, soap, sodium, xml, zip
+mbstring, mysqli, opcache, pcntl, pdo_mysql, pdo_pgsql, pgsql, soap, sodium, xml, zip
 
 ### PECL
 
-redis, decimal
+redis, decimal, imagick, apcu
 
 ### Dev only (*-dev tags)
 
 xdebug
+
+## System tools
+
+- `ghostscript` (PDF rendering, imagick PDF support)
+- `graphviz` (Moodle graph visualization via `dot`)
+- `mariadb-client` (mysql CLI)
+- `redis-tools` (redis-cli)
+
+## Health check
+
+The image includes a built-in HEALTHCHECK that pings PHP-FPM every 30s. PHP-FPM is configured with `/ping` and `/status` endpoints.
+
+Override the FastCGI address via `FCGI_CONNECT` env var (default: `127.0.0.1:9000`).
 
 ## Usage
 
@@ -71,11 +84,6 @@ The dev tags set `validate_timestamps = 1` automatically.
 - IDE key: `PHPSTORM`
 
 Override with your own `xdebug.ini`.
-
-## System tools
-
-- `mariadb-client` (mysql CLI)
-- `redis-tools` (redis-cli)
 
 ## CI/CD
 

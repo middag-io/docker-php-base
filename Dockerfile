@@ -27,8 +27,9 @@ LABEL maintainer="MIDDAG <paulo@middag.com.br>"
 LABEL org.opencontainers.image.source="https://github.com/middag-io/php-base"
 LABEL org.opencontainers.image.description="PHP ${PHP_VERSION}-FPM base image with common extensions for WordPress and Moodle"
 
-# System dependencies for PHP extensions
+# System dependencies for PHP extensions + tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
+        # PHP extension build deps
         libcurl4-openssl-dev \
         libfreetype6-dev \
         libicu-dev \
@@ -45,6 +46,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libmpdec-dev \
         libpq-dev \
         libldap2-dev \
+        libmagickwand-dev \
+        # Runtime tools
+        ghostscript \
+        graphviz \
         mariadb-client \
         redis-tools \
     # GD with full format support
@@ -66,6 +71,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         mbstring \
         mysqli \
         opcache \
+        pcntl \
         pdo_mysql \
         pdo_pgsql \
         pgsql \
@@ -73,14 +79,27 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         sodium \
         xml \
         zip \
-    # PECL extensions: redis, decimal, xdebug (xdebug compiled but not enabled)
-    && pecl install redis decimal xdebug \
-    && docker-php-ext-enable redis decimal \
+    # PECL extensions
+    && pecl install redis decimal imagick apcu xdebug \
+    && docker-php-ext-enable redis decimal imagick apcu \
     && apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false \
     && rm -rf /var/lib/apt/lists/* /tmp/pear
 
 # OPcache defaults (projects can override via their own .ini)
 COPY config/opcache.ini /usr/local/etc/php/conf.d/opcache-defaults.ini
+
+# PHP-FPM ping/status for health checks
+RUN echo "[www]" > /usr/local/etc/php-fpm.d/zz-healthcheck.conf \
+    && echo "pm.status_path = /status" >> /usr/local/etc/php-fpm.d/zz-healthcheck.conf \
+    && echo "ping.path = /ping" >> /usr/local/etc/php-fpm.d/zz-healthcheck.conf \
+    && echo "ping.response = pong" >> /usr/local/etc/php-fpm.d/zz-healthcheck.conf
+
+# Health check script
+COPY config/healthcheck.sh /usr/local/bin/healthcheck
+RUN chmod +x /usr/local/bin/healthcheck
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD ["healthcheck"]
 
 WORKDIR /var/www/html
 
