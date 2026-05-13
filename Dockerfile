@@ -56,7 +56,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         --with-avif \
     && docker-php-ext-configure ldap \
     # Extensions already in php:X.Y-fpm base: curl, dom, mbstring, sodium, xml
-    # Only install what's NOT pre-compiled
+    # opcache is always built-in starting PHP 8.5 (cannot be installed as shared)
     && docker-php-ext-install -j"$(nproc)" \
         bcmath \
         exif \
@@ -65,13 +65,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         intl \
         ldap \
         mysqli \
-        opcache \
         pcntl \
         pdo_mysql \
         pdo_pgsql \
         pgsql \
         soap \
         zip \
+    && if [ "$(php -r 'echo PHP_MINOR_VERSION;')" -lt 5 ]; then \
+        docker-php-ext-install opcache; \
+    fi \
     # PECL extensions
     && pecl install redis decimal imagick apcu xdebug \
     && docker-php-ext-enable redis decimal imagick apcu \
