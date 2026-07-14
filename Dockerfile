@@ -46,6 +46,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         # Runtime tools
         ghostscript \
         graphviz \
+        locales \
         mariadb-client \
         redis-tools \
     # GD with full format support
@@ -77,6 +78,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # PECL extensions
     && pecl install redis decimal imagick apcu xdebug \
     && docker-php-ext-enable redis decimal imagick apcu \
+    # Locales: Moodle's setlocale/PHPUnit init requires en_AU.UTF-8
+    && sed -i 's/^# *en_AU.UTF-8 UTF-8/en_AU.UTF-8 UTF-8/' /etc/locale.gen \
+    && locale-gen \
     && apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false \
     && rm -rf /var/lib/apt/lists/* /tmp/pear
 
