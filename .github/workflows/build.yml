@@ -13,12 +13,14 @@ on:
 
 env:
   IMAGE_NAME: middagtec/php-base
+  GHCR_IMAGE_NAME: ghcr.io/middag-io/docker-php-base
 
 jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      packages: write
 
     strategy:
       fail-fast: false
@@ -42,11 +44,21 @@ jobs:
           username: ${{ vars.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Login to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Docker meta (production)
         id: meta-prod
         uses: docker/metadata-action@v6
         with:
-          images: ${{ env.IMAGE_NAME }}
+          images: |
+            ${{ env.IMAGE_NAME }}
+            ${{ env.GHCR_IMAGE_NAME }}
           tags: |
             type=raw,value=${{ matrix.php }}-fpm,enable={{is_default_branch}}
             type=sha,prefix=${{ matrix.php }}-fpm-
@@ -55,7 +67,9 @@ jobs:
         id: meta-dev
         uses: docker/metadata-action@v6
         with:
-          images: ${{ env.IMAGE_NAME }}
+          images: |
+            ${{ env.IMAGE_NAME }}
+            ${{ env.GHCR_IMAGE_NAME }}
           tags: |
             type=raw,value=${{ matrix.php }}-fpm-dev,enable={{is_default_branch}}
             type=sha,prefix=${{ matrix.php }}-fpm-dev-
