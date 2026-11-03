@@ -39,6 +39,8 @@ xdebug
 
 The image includes a built-in HEALTHCHECK that pings PHP-FPM every 30s. PHP-FPM is configured with `/ping` and `/status` endpoints.
 
+The check sends a real FastCGI request to `/ping` with `cgi-fcgi` (from `libfcgi-bin`, shipped in the image) and expects `pong`. It fails when the FPM pool does not answer; there is no config-only fallback.
+
 Override the FastCGI address via `FCGI_CONNECT` env var (default: `127.0.0.1:9000`).
 
 ## Usage

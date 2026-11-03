@@ -44,6 +44,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libldap2-dev \
         libmagickwand-dev \
         # Runtime tools
+        # libfcgi-bin provides cgi-fcgi, used by the HEALTHCHECK to ping FPM
+        libfcgi-bin \
         ghostscript \
         graphviz \
         locales \
