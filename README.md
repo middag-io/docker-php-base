@@ -43,6 +43,11 @@ The check sends a real FastCGI request to `/ping` with `cgi-fcgi` (from `libfcgi
 
 Override the FastCGI address via `FCGI_CONNECT` env var (default: `127.0.0.1:9000`).
 
+Notes:
+
+- `FCGI_CONNECT` must match the pool's `listen` directive. If a consumer switches FPM to a unix socket, set `FCGI_CONNECT` to the socket path.
+- `/ping` is served by a pool worker. When the pool is saturated (all `pm.max_children` busy), the ping waits in the queue and may exceed the 3s timeout, so the container can show `unhealthy` under heavy load without being hung. Keep this in mind before wiring the Docker HEALTHCHECK to an automatic restart (autoheal, ECS health check).
+
 ## Usage
 
 ```dockerfile
