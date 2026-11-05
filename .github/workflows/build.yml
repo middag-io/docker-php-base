@@ -11,12 +11,118 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# PR runs are superseded by newer pushes; publishing runs are never cancelled.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
 env:
   IMAGE_NAME: middagtec/php-base
   GHCR_IMAGE_NAME: ghcr.io/middag-io/docker-php-base
+  IS_PUBLISH: ${{ github.event_name != 'pull_request' }}
+  # Publishing output: push each single-arch image by digest to both registries.
+  OUTPUT_PUBLISH: type=image,"name=middagtec/php-base,ghcr.io/middag-io/docker-php-base",push-by-digest=true,name-canonical=true,push=true
 
 jobs:
+  # One job per PHP version and architecture, each on a native runner (no QEMU).
+  # Pull requests only build amd64 (validation, nothing is pushed).
+  # Publishing runs push each architecture by digest; `merge` assembles the tags.
   build:
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    permissions:
+      contents: read
+      packages: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.2', '8.3', '8.4', '8.5']
+        arch: ${{ fromJSON(github.event_name == 'pull_request' && '["amd64"]' || '["amd64","arm64"]') }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Login to Docker Hub
+        if: env.IS_PUBLISH == 'true'
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Login to GHCR
+        if: env.IS_PUBLISH == 'true'
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker meta (labels)
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: |
+            ${{ env.IMAGE_NAME }}
+            ${{ env.GHCR_IMAGE_NAME }}
+
+      - name: Build (production)
+        id: build-prod
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          target: production
+          platforms: linux/${{ matrix.arch }}
+          build-args: PHP_VERSION=${{ matrix.php }}
+          labels: ${{ steps.meta.outputs.labels }}
+          outputs: ${{ env.IS_PUBLISH == 'true' && env.OUTPUT_PUBLISH || 'type=cacheonly' }}
+          cache-from: type=gha,scope=php${{ matrix.php }}-prod-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=php${{ matrix.php }}-prod-${{ matrix.arch }}
+
+      - name: Build (development)
+        id: build-dev
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          target: development
+          platforms: linux/${{ matrix.arch }}
+          build-args: PHP_VERSION=${{ matrix.php }}
+          labels: ${{ steps.meta.outputs.labels }}
+          outputs: ${{ env.IS_PUBLISH == 'true' && env.OUTPUT_PUBLISH || 'type=cacheonly' }}
+          cache-from: type=gha,scope=php${{ matrix.php }}-dev-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=php${{ matrix.php }}-dev-${{ matrix.arch }}
+
+      - name: Export digests
+        if: env.IS_PUBLISH == 'true'
+        env:
+          DIGEST_PROD: ${{ steps.build-prod.outputs.digest }}
+          DIGEST_DEV: ${{ steps.build-dev.outputs.digest }}
+        run: |
+          mkdir -p "${RUNNER_TEMP}/digests/prod" "${RUNNER_TEMP}/digests/dev"
+          touch "${RUNNER_TEMP}/digests/prod/${DIGEST_PROD#sha256:}"
+          touch "${RUNNER_TEMP}/digests/dev/${DIGEST_DEV#sha256:}"
+
+      - name: Upload digests
+        if: env.IS_PUBLISH == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: digests-php${{ matrix.php }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # Assemble the multi-arch tags (same tag set as before) from the per-arch digests.
+  merge:
+    needs: build
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -28,25 +134,24 @@ jobs:
         php: ['8.2', '8.3', '8.4', '8.5']
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Set up QEMU (multi-arch)
-        uses: docker/setup-qemu-action@v4
+      - name: Download digests
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digests-php${{ matrix.php }}-*
+          merge-multiple: true
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Login to Docker Hub
-        if: github.event_name != 'pull_request'
-        uses: docker/login-action@v4
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           username: ${{ vars.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Login to GHCR
-        if: github.event_name != 'pull_request'
-        uses: docker/login-action@v4
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -54,7 +159,7 @@ jobs:
 
       - name: Docker meta (production)
         id: meta-prod
-        uses: docker/metadata-action@v6
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: |
             ${{ env.IMAGE_NAME }}
@@ -65,7 +170,7 @@ jobs:
 
       - name: Docker meta (development)
         id: meta-dev
-        uses: docker/metadata-action@v6
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: |
             ${{ env.IMAGE_NAME }}
@@ -74,39 +179,41 @@ jobs:
             type=raw,value=${{ matrix.php }}-fpm-dev,enable={{is_default_branch}}
             type=sha,prefix=${{ matrix.php }}-fpm-dev-
 
-      - name: Build and push (production)
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          target: production
-          platforms: linux/amd64,linux/arm64
-          build-args: PHP_VERSION=${{ matrix.php }}
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta-prod.outputs.tags }}
-          labels: ${{ steps.meta-prod.outputs.labels }}
-          cache-from: type=gha,scope=php${{ matrix.php }}-prod
-          cache-to: type=gha,mode=max,scope=php${{ matrix.php }}-prod
+      - name: Create multi-arch manifests
+        env:
+          DIGESTS_DIR: ${{ runner.temp }}/digests
+          TAGS_PROD: ${{ steps.meta-prod.outputs.tags }}
+          TAGS_DEV: ${{ steps.meta-dev.outputs.tags }}
+        run: |
+          create_manifest() {
+            local target="$1" tags="$2"
+            local -a args=()
+            while IFS= read -r tag; do
+              [ -n "$tag" ] && args+=(-t "$tag")
+            done <<< "$tags"
+            for digest in "${DIGESTS_DIR}/${target}"/*; do
+              args+=("${IMAGE_NAME}@sha256:$(basename "$digest")")
+            done
+            docker buildx imagetools create "${args[@]}"
+          }
+          create_manifest prod "$TAGS_PROD"
+          create_manifest dev "$TAGS_DEV"
 
-      - name: Build and push (development)
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          target: development
-          platforms: linux/amd64,linux/arm64
-          build-args: PHP_VERSION=${{ matrix.php }}
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta-dev.outputs.tags }}
-          labels: ${{ steps.meta-dev.outputs.labels }}
-          cache-from: type=gha,scope=php${{ matrix.php }}-dev
-          cache-to: type=gha,mode=max,scope=php${{ matrix.php }}-dev
+      - name: Inspect
+        env:
+          PHP_VERSION: ${{ matrix.php }}
+          SHORT_SHA: ${{ github.sha }}
+        run: |
+          docker buildx imagetools inspect "${IMAGE_NAME}:${PHP_VERSION}-fpm-${SHORT_SHA::7}"
+          docker buildx imagetools inspect "${IMAGE_NAME}:${PHP_VERSION}-fpm-dev-${SHORT_SHA::7}"
 
   tag-latest:
-    needs: build
+    needs: merge
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - name: Login to Docker Hub
-        uses: docker/login-action@v4
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           username: ${{ vars.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
