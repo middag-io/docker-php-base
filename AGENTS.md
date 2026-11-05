@@ -1,6 +1,6 @@
 # AGENTS.md — docker-php-base
 
-`middagtec/php-base` — shared PHP-FPM base image with common extensions for MIDDAG WordPress and Moodle projects. Matrix builds for PHP 8.2/8.3/8.4/8.5, production (`-fpm`, OPcache JIT) and development (`-fpm-dev`, + Xdebug) tags, published to Docker Hub via GitHub Actions (`.github/workflows/build.yml`).
+`middagtec/php-base` — shared PHP-FPM base image with common extensions for MIDDAG WordPress and Moodle projects. Matrix builds for PHP 8.2/8.3/8.4/8.5, production (`-fpm`, OPcache JIT) and development (`-fpm-dev`, + Xdebug) tags, published to Docker Hub and GHCR via GitHub Actions (`.github/workflows/build.yml`).
 
 **What this repo is NOT:**
 
@@ -10,7 +10,12 @@
 ## Git
 
 - Conventional Commits; **never** `Co-Authored-By`.
-- Base branch: `main` trunk-based — push to `main` triggers the CI matrix build+push.
+- Base branch: `main` trunk-based — push to `main` (Dockerfile, `config/**` or the workflow) triggers the matrix build+push.
+
+## CI
+
+- Pull requests build `linux/amd64` only (validation, nothing pushed); newer pushes to the same PR cancel the running build.
+- Publishing runs (push to `main`, `workflow_dispatch`) build amd64 on `ubuntu-latest` and arm64 on the native `ubuntu-24.04-arm` runner (no QEMU), push each arch by digest, then the `merge` job assembles the multi-arch tags. Publishing runs are never cancelled.
 
 ## Language
 
@@ -18,7 +23,7 @@ Docs and commits in EN (public repo).
 
 ## Quality gates
 
-Green before delivering: local `docker build .` sanity for the touched PHP version; CI matrix (all 4 versions × prod/dev) must pass before the change is real.
+Green before delivering: local `docker build .` sanity for the touched PHP version; CI matrix (all 4 versions × prod/dev; arm64 only runs on publish) must pass before the change is real.
 
 ## Inherited rules (pointers, do not copy)
 
